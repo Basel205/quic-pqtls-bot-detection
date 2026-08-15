@@ -38,7 +38,7 @@ from quic_parser    import extract_quic_features_from_pcap
 from timing_extractor import extract_timing_features
 from ja4_extractor  import extract_ja4
 from ja4h_extractor import extract_ja4h
-from config import (
+from tg_config import (
     PCAP_STORE, DB_PATH, DATASET_PATH, MANIFEST_PATH,
 )
 

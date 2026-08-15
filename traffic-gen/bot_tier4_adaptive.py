@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from traffic_gen.config import SESSIONS_TIER4
+from tg_config import SESSIONS_TIER4
 
 
 def run_bot_t4_session(session_id: str) -> None:

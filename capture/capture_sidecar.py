@@ -6,9 +6,14 @@ import subprocess
 import time
 from pathlib import Path
 
+# Bootstrap paths
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from traffic_gen.config import TSHARK_BIN, TSHARK_INTERFACE, TSHARK_PORT
+from pathlib import Path
+_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_ROOT))
+from _paths import setup_paths; setup_paths(_ROOT)
+
+from tg_config import TSHARK_BIN, TSHARK_INTERFACE, TSHARK_PORT
 
 
 def start_capture(

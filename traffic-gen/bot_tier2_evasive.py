@@ -33,7 +33,7 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from traffic_gen.config import (
+from tg_config import (
     TARGET_BASE_URL, TARGET_PAGES,
     BOT_DELAY_MEAN, BOT_DELAY_STD,
     SESSIONS_TIER2,

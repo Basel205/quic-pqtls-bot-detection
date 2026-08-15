@@ -5,7 +5,7 @@ from pathlib import Path
 db_path = Path(__file__).parent / 'bot_detection.db'
 schema_path = Path(__file__).parent / 'schema.sql'
 
-if __name__ == '__main__':
+def init_db():
     with open(schema_path, 'r') as f:
         schema = f.read()
     
@@ -14,3 +14,6 @@ if __name__ == '__main__':
     conn.commit()
     conn.close()
     print("Database initialized successfully.")
+
+if __name__ == '__main__':
+    init_db()

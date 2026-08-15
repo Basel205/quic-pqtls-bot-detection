@@ -20,15 +20,20 @@ import time
 import uuid
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Bootstrap paths
+import sys
+from pathlib import Path
+_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_ROOT))
+from _paths import setup_paths; setup_paths(_ROOT)
 
-from traffic_gen.config import (
+from tg_config import (
     PCAP_STORE, DB_PATH, MANIFEST_PATH,
     TSHARK_BIN, TSHARK_INTERFACE, TSHARK_PORT,
     SESSIONS_HUMAN, SESSIONS_TIER1, SESSIONS_TIER2, SESSIONS_TIER3,
 )
-from capture.capture_sidecar import start_capture, stop_capture, get_pcap_path
-from db.init_db import init_db
+from capture_sidecar import start_capture, stop_capture, get_pcap_path
+from init_db import init_db
 
 
 TIER_MAP = {
@@ -90,20 +95,20 @@ async def run_session(label: str, session_id: str) -> bool:
 
     try:
         if label == "human":
-            from traffic_gen.human_traffic import run_human_session
-            await run_human_session(session_id)
+            import human_traffic
+            await human_traffic.run_human_session(session_id)
 
         elif label == "bot_t1":
-            from traffic_gen.bot_tier1_naive import run_bot_t1_session
-            run_bot_t1_session(session_id)
+            import bot_tier1_naive
+            bot_tier1_naive.run_bot_t1_session(session_id)
 
         elif label == "bot_t2":
-            from traffic_gen.bot_tier2_evasive import run_bot_t2_session
-            run_bot_t2_session(session_id)
+            import bot_tier2_evasive
+            bot_tier2_evasive.run_bot_t2_session(session_id)
 
         elif label == "bot_t3":
-            from traffic_gen.bot_tier3_sophisticated import run_bot_t3_session
-            await run_bot_t3_session(session_id)
+            import bot_tier3_sophisticated
+            await bot_tier3_sophisticated.run_bot_t3_session(session_id)
 
         else:
             raise ValueError(f"Unknown label: {label}")
