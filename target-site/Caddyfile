@@ -1,0 +1,21 @@
+{
+    # Global options
+    local_certs
+    auto_https disable_redirects
+}
+
+localhost:443 {
+    tls internal
+
+    # Enable QUIC / HTTP3
+    # Caddy enables HTTP/3 (QUIC) automatically when serving TLS
+
+    # Serve the Express app
+    reverse_proxy localhost:3000
+
+    # Access log for HTTP-level features
+    log {
+        output file ./logs/access.log
+        format json
+    }
+}

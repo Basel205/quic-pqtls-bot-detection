@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# ML artifacts (large binary files)
+ml/model_registry/*.joblib
+ml/model_registry/*.pkl
+mlruns/
+mlflow.db
+*.parquet
+
+# Captures (large, regeneratable)
+capture/pcap_store/*.pcap
+!capture/pcap_store/.gitkeep
+
+# Database
+db/bot_detection.db
+
+# Certs
+target-site/certs/
+
+# Node
+node_modules/
+dashboard/dist/
+
+# Logs
+*.log
+target-site/logs/
+
+# OS
+.DS_Store
+Thumbs.db
