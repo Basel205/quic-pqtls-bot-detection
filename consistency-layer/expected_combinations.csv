@@ -1,0 +1,4 @@
+tls_version,has_pq_keyshare,used_http3,sg_x25519,sg_secp256r1,sg_secp384r1,sg_secp521r1,sg_x25519mlkem768,sg_other,alpn_h2,alpn_http11,alpn_h3,alpn_other,count,count_lab,count_external,probability
+771,1,1,1,1,1,0,1,0,1,1,1,0,500,500,0,0.9259259259259259
+771,1,1,1,1,1,0,1,0,0,0,1,0,20,0,20,0.037037037037037035
+771,1,1,1,1,1,1,1,0,0,0,1,0,20,0,20,0.037037037037037035

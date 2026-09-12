@@ -6,7 +6,7 @@ db_path = Path(__file__).parent / 'bot_detection.db'
 schema_path = Path(__file__).parent / 'schema.sql'
 
 def init_db():
-    with open(schema_path, 'r') as f:
+    with open(schema_path, 'r', encoding='utf-8') as f:
         schema = f.read()
     
     conn = sqlite3.connect(db_path)

@@ -1,0 +1,57 @@
+{
+  "n_bot_t4_sessions": 200,
+  "A_baseline": {
+    "n_sessions": 200,
+    "n_evaded_as_human": 147,
+    "evasion_rate": 0.735,
+    "prediction_distribution": {
+      "human": 147,
+      "bot_t3": 53
+    }
+  },
+  "B_enhanced": {
+    "n_sessions": 200,
+    "n_evaded_as_human": 194,
+    "evasion_rate": 0.97,
+    "prediction_distribution": {
+      "human": 194,
+      "bot_t3": 6
+    }
+  },
+  "D1_spatial": {
+    "n_sessions": 200,
+    "n_evaded_as_human": 194,
+    "evasion_rate": 0.97,
+    "prediction_distribution": {
+      "human": 194,
+      "bot_t3": 6
+    }
+  },
+  "D2_spatial_temporal": {
+    "n_sessions": 200,
+    "n_evaded_as_human": 194,
+    "evasion_rate": 0.97,
+    "prediction_distribution": {
+      "human": 194,
+      "bot_t3": 6
+    }
+  },
+  "Ablation_spatial_only": {
+    "n_sessions": 200,
+    "n_evaded_as_human": 151,
+    "evasion_rate": 0.755,
+    "prediction_distribution": {
+      "human": 151,
+      "bot_t3": 49
+    }
+  },
+  "Ablation_full_consistency": {
+    "n_sessions": 200,
+    "n_evaded_as_human": 149,
+    "evasion_rate": 0.745,
+    "prediction_distribution": {
+      "human": 149,
+      "bot_t3": 51
+    }
+  }
+}

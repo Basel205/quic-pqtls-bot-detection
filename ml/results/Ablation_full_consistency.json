@@ -1,0 +1,32 @@
+{
+  "experiment": "Ablation_full_consistency",
+  "description": "Ablation Study: Classical + spatial + temporal-inconsistency scores (no PQ/QUIC/timing)",
+  "n_features": 18,
+  "features": [
+    "ja4_fingerprint_hash",
+    "tls_version",
+    "cipher_suite_count",
+    "cipher_suite_order_hash",
+    "extension_count",
+    "extension_order_hash",
+    "sg_x25519",
+    "sg_secp256r1",
+    "sg_secp384r1",
+    "sg_secp521r1",
+    "sg_x25519mlkem768",
+    "sg_other",
+    "alpn_h2",
+    "alpn_http11",
+    "alpn_h3",
+    "alpn_other",
+    "spatial_inconsistency_score",
+    "temporal_inconsistency_score"
+  ],
+  "n_train": 1120,
+  "n_val": 240,
+  "n_test": 240,
+  "accuracy": 0.8,
+  "macro_f1": 0.7777091694967583,
+  "roc_auc_ovr": 0.9257772597772598,
+  "model_path": "C:\\Users\\har20\\OneDrive\\Desktop\\project 1\\code\\quic-pqtls-bot-detection\\ml\\model_registry\\Ablation_full_consistency.joblib"
+}

@@ -8,12 +8,15 @@ PRAGMA foreign_keys = ON;
 -- One row per captured session (from session_orchestrator.py manifest)
 CREATE TABLE IF NOT EXISTS sessions (
     session_id    TEXT PRIMARY KEY,
-    label         TEXT NOT NULL,          -- human / bot_t1 / bot_t2 / bot_t3 / bot_t4
-    source        TEXT,                   -- playwright_chrome / requests / curl_impersonate / etc.
-    start_ts      REAL NOT NULL,          -- Unix timestamp (float)
+    client_identity_id TEXT,      -- groups sessions claiming to be the same client (repeat visits); distinct from session_id
+    label         TEXT NOT NULL,  -- human / bot_t1 / bot_t2 / bot_t3 / bot_t4
+    source        TEXT,           -- playwright_chrome / requests / curl_impersonate / etc.
+    start_ts      REAL NOT NULL,  -- Unix timestamp (float)
     end_ts        REAL,
-    pcap_path     TEXT                    -- path to the session's pcap file
+    pcap_path     TEXT            -- path to the session's pcap file
 );
+
+CREATE INDEX IF NOT EXISTS idx_sessions_client_identity ON sessions(client_identity_id);
 
 -- ── Features ────────────────────────────────────────────────────────────────
 -- One row per session: the 19-field feature vector (mirrors feature_schema.py)
@@ -25,8 +28,18 @@ CREATE TABLE IF NOT EXISTS features (
     cipher_suite_order_hash   INTEGER,
     extension_count           INTEGER,
     extension_order_hash      INTEGER,
-    supported_groups_hash     INTEGER,
-    alpn_hash                 INTEGER,
+    -- supported_groups / alpn: multi-hot (Step 3 decision, 2026-08-18) —
+    -- see SUPPORTED_GROUPS_VOCAB / ALPN_VOCAB in feature_schema.py
+    sg_x25519                 INTEGER DEFAULT 0,
+    sg_secp256r1              INTEGER DEFAULT 0,
+    sg_secp384r1              INTEGER DEFAULT 0,
+    sg_secp521r1              INTEGER DEFAULT 0,
+    sg_x25519mlkem768         INTEGER DEFAULT 0,
+    sg_other                  INTEGER DEFAULT 0,
+    alpn_h2                   INTEGER DEFAULT 0,
+    alpn_http11               INTEGER DEFAULT 0,
+    alpn_h3                   INTEGER DEFAULT 0,
+    alpn_other                INTEGER DEFAULT 0,
     has_pq_keyshare           INTEGER DEFAULT 0,   -- 0/1
     pq_keyshare_data_len      INTEGER DEFAULT -1,  -- -1 = absent
     used_http3                INTEGER DEFAULT 0,

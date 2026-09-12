@@ -33,7 +33,7 @@ sys.path.insert(0, str(_ROOT))
 from _paths import setup_paths; setup_paths(_ROOT)
 
 from feature_schema import FeatureVector
-from pq_detector    import extract_pq_features_from_pcap
+from pq_detector    import extract_pq_features_from_pcap, multi_hot_alpn
 from quic_parser    import extract_quic_features_from_pcap
 from timing_extractor import extract_timing_features
 from ja4_extractor  import extract_ja4
@@ -50,9 +50,16 @@ def extract_features_for_pcap(pcap_path: Path, session_id: str, label: str) -> F
 
     pq_feats      = extract_pq_features_from_pcap(str(pcap_path))
     quic_feats    = extract_quic_features_from_pcap(str(pcap_path))
-    timing_feats  = extract_timing_features(str(pcap_path))
+    timing_feats  = extract_timing_features(str(pcap_path), session_id, str(ACCESS_LOG))
     ja4_feats     = extract_ja4(str(pcap_path))
     ja4h_feats    = extract_ja4h(session_id, str(ACCESS_LOG))
+
+    # A session can negotiate ALPN separately on a TCP-layer connection and a
+    # QUIC connection (e.g. offers h2/http1.1 over TCP, h3 over QUIC) — merge
+    # both offered lists before computing the final multi-hot ALPN fields,
+    # rather than using only the TCP-layer ClientHello pq_feats saw first.
+    merged_alpn  = sorted(set(pq_feats["tcp_alpn"]) | set(quic_feats["quic_alpn"]))
+    alpn_feats   = multi_hot_alpn(merged_alpn)
 
     return FeatureVector(
         session_id=session_id,
@@ -64,8 +71,16 @@ def extract_features_for_pcap(pcap_path: Path, session_id: str, label: str) -> F
         cipher_suite_order_hash = pq_feats["cipher_suite_order_hash"],
         extension_count         = pq_feats["extension_count"],
         extension_order_hash    = pq_feats["extension_order_hash"],
-        supported_groups_hash   = pq_feats["supported_groups_hash"],
-        alpn_hash               = pq_feats["alpn_hash"],
+        sg_x25519               = pq_feats["sg_x25519"],
+        sg_secp256r1            = pq_feats["sg_secp256r1"],
+        sg_secp384r1            = pq_feats["sg_secp384r1"],
+        sg_secp521r1            = pq_feats["sg_secp521r1"],
+        sg_x25519mlkem768       = pq_feats["sg_x25519mlkem768"],
+        sg_other                = pq_feats["sg_other"],
+        alpn_h2                 = alpn_feats["alpn_h2"],
+        alpn_http11              = alpn_feats["alpn_http11"],
+        alpn_h3                 = alpn_feats["alpn_h3"],
+        alpn_other               = alpn_feats["alpn_other"],
 
         # Novel PQ/QUIC signals
         has_pq_keyshare          = pq_feats["has_pq_keyshare"],
@@ -104,6 +119,7 @@ def write_to_sqlite(fv: FeatureVector) -> None:
     try:
         d = fv.to_dict()
         d.pop("session_id")
+        d.pop("label")  # label lives in the sessions table, not features
         cols   = ", ".join(d.keys())
         placeholders = ", ".join("?" for _ in d)
         vals   = list(d.values())
@@ -162,7 +178,7 @@ def build_dataset(pcap_dir: Path = PCAP_STORE, single_pcap: Path | None = None) 
     df = pd.DataFrame(rows)
     DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(DATASET_PATH, index=False)
-    print(f"\n[build_dataset] Done. {len(rows)} sessions → {DATASET_PATH}")
+    print(f"\n[build_dataset] Done. {len(rows)} sessions -> {DATASET_PATH}")
     print(f"  Columns: {list(df.columns)}")
     print(f"  has_pq_keyshare distribution:\n{df.groupby(['label','has_pq_keyshare']).size().to_string()}")
 

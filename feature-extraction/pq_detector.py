@@ -34,15 +34,51 @@ sys.path.insert(0, str(_ROOT))
 from _paths import setup_paths; setup_paths(_ROOT)
 
 from scapy.all import rdpcap, Raw
-from scapy.layers.tls.record import TLS
 
-from feature_schema import PQ_GROUP_ID
+from feature_schema import PQ_GROUP_ID, SUPPORTED_GROUPS_VOCAB, ALPN_VOCAB
 
 
 # ── Extension type constants ──────────────────────────────────────────────────
 EXT_SUPPORTED_GROUPS = 0x000A
 EXT_KEY_SHARE        = 0x0033
 EXT_ALPN             = 0x0010
+
+# GREASE values (RFC 8701) — excluded from supported_groups matching since
+# browsers routinely include one at a random codepoint; counting it toward
+# "other" would fire on nearly every real session.
+_GREASE = {
+    0x0A0A, 0x1A1A, 0x2A2A, 0x3A3A, 0x4A4A, 0x5A5A,
+    0x6A6A, 0x7A7A, 0x8A8A, 0x9A9A, 0xAAAA, 0xBABA,
+    0xCACA, 0xDADA, 0xEAEA, 0xFAFA,
+}
+
+
+def multi_hot_supported_groups(groups: list[int]) -> dict:
+    """Multi-hot encode a ClientHello's supported_groups list per SUPPORTED_GROUPS_VOCAB."""
+    out = {f"sg_{name}": 0 for name in SUPPORTED_GROUPS_VOCAB.values()}
+    out["sg_other"] = 0
+    for g in groups:
+        if g in _GREASE:
+            continue
+        name = SUPPORTED_GROUPS_VOCAB.get(g)
+        if name is not None:
+            out[f"sg_{name}"] = 1
+        else:
+            out["sg_other"] = 1
+    return out
+
+
+def multi_hot_alpn(protocols: list[str]) -> dict:
+    """Multi-hot encode a ClientHello's ALPN protocol list per ALPN_VOCAB."""
+    out = {f"alpn_{p.replace('/', '').replace('.', '')}": 0 for p in ALPN_VOCAB}
+    out["alpn_other"] = 0
+    for p in protocols:
+        field = f"alpn_{p.replace('/', '').replace('.', '')}"
+        if field in out:
+            out[field] = 1
+        else:
+            out["alpn_other"] = 1
+    return out
 
 
 def parse_clienthello(raw_bytes: bytes) -> dict:
@@ -194,9 +230,15 @@ def extract_pq_features_from_pcap(pcap_path: str) -> dict:
         "cipher_suite_order_hash": int,
         "extension_count": int,
         "extension_order_hash": int,
-        "supported_groups_hash": int,
-        "alpn_hash": int,
+        "sg_x25519": int, "sg_secp256r1": int, "sg_secp384r1": int,
+        "sg_secp521r1": int, "sg_x25519mlkem768": int, "sg_other": int,
+        "alpn_h2": int, "alpn_http11": int, "alpn_h3": int, "alpn_other": int,
+        "tcp_alpn": list[str],   # raw ALPN list as offered in this (TCP-layer) ClientHello
       }
+    The alpn_* multi-hot fields above reflect only this TCP-layer ClientHello;
+    a session may separately negotiate QUIC with its own ALPN (see
+    quic_parser.py's "quic_alpn") — build_dataset.py merges both before
+    computing the FeatureVector's final alpn_* fields.
     Uses scapy to read the pcap.
     """
     default = {
@@ -207,8 +249,9 @@ def extract_pq_features_from_pcap(pcap_path: str) -> dict:
         "cipher_suite_order_hash": 0,
         "extension_count":       0,
         "extension_order_hash":  0,
-        "supported_groups_hash": 0,
-        "alpn_hash":             0,
+        **multi_hot_supported_groups([]),
+        **multi_hot_alpn([]),
+        "tcp_alpn":              [],
     }
 
     try:
@@ -231,8 +274,6 @@ def extract_pq_features_from_pcap(pcap_path: str) -> dict:
 
             cipher_str   = ",".join(str(c) for c in parsed["cipher_suites"])
             ext_str      = ",".join(str(e["type"]) for e in parsed["extensions"])
-            groups_str   = ",".join(str(g) for g in parsed["supported_groups"])
-            alpn_str     = ",".join(parsed["alpn"])
 
             def _hash(s: str) -> int:
                 return int(hashlib.md5(s.encode()).hexdigest(), 16) % (2**31)
@@ -245,8 +286,9 @@ def extract_pq_features_from_pcap(pcap_path: str) -> dict:
                 "cipher_suite_order_hash": _hash(cipher_str),
                 "extension_count":       len(parsed["extensions"]),
                 "extension_order_hash":  _hash(ext_str),
-                "supported_groups_hash": _hash(groups_str),
-                "alpn_hash":             _hash(alpn_str),
+                **multi_hot_supported_groups(parsed["supported_groups"]),
+                **multi_hot_alpn(parsed["alpn"]),
+                "tcp_alpn": parsed["alpn"],
             }
 
     return default

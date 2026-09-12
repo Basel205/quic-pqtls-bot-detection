@@ -37,10 +37,17 @@ SESSIONS_TIER2  = 400
 SESSIONS_TIER3  = 300
 SESSIONS_TIER4  = 200  # Evasion bots — run separately after model is trained
 
+# Fraction of Tier-4 sessions that run the "degraded" backend profile
+# (--disable-quic) instead of "full" (genuine PQ+QUIC, matches human exactly).
+# Models a distributed bot operation that can't guarantee every worker/exit-node
+# in a claimed-identity group proxies QUIC's UDP traffic — see bot_tier4_adaptive.py.
+TIER4_DEGRADED_PROFILE_PROB = 0.3
+
 # ── Capture ──────────────────────────────────────────────────────────────────
-# IMPORTANT: Run `tshark -D` on your machine and find the loopback adapter number
-# On Windows with Npcap it's usually: \Device\NPF_Loopback
-TSHARK_INTERFACE = r"\Device\NPF_Loopback"  # UPDATE THIS after running tshark -D
+# Confirmed via `tshark -D` + a live 3s test capture on 2026-08-16 — this
+# interface captures loopback traffic on this machine. Re-verify with
+# `tshark -D` if this project moves to a different machine.
+TSHARK_INTERFACE = r"\Device\NPF_Loopback"
 TSHARK_PORT      = 443
 TSHARK_BIN       = r"C:\Program Files\Wireshark\tshark.exe"
 

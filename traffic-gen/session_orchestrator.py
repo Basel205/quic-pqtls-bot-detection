@@ -14,6 +14,7 @@ Usage:
 import argparse
 import asyncio
 import csv
+import random
 import sqlite3
 import sys
 import time
@@ -30,47 +31,63 @@ from _paths import setup_paths; setup_paths(_ROOT)
 from tg_config import (
     PCAP_STORE, DB_PATH, MANIFEST_PATH,
     TSHARK_BIN, TSHARK_INTERFACE, TSHARK_PORT,
-    SESSIONS_HUMAN, SESSIONS_TIER1, SESSIONS_TIER2, SESSIONS_TIER3,
+    SESSIONS_HUMAN, SESSIONS_TIER1, SESSIONS_TIER2, SESSIONS_TIER3, SESSIONS_TIER4,
+    TIER4_DEGRADED_PROFILE_PROB,
 )
 from capture_sidecar import start_capture, stop_capture, get_pcap_path
 from init_db import init_db
 
 
+# Tiers included in a bare `python session_orchestrator.py` full run (the main
+# 1,600-session dataset). bot_t4 is intentionally excluded here — it's Phase
+# 5's evasion test, generated separately via `--tier bot_t4` (see
+# ALL_TIER_MAP below) so it never accidentally gets folded into a "full run".
 TIER_MAP = {
     "human":  ("human",  SESSIONS_HUMAN),
     "bot_t1": ("bot_t1", SESSIONS_TIER1),
     "bot_t2": ("bot_t2", SESSIONS_TIER2),
     "bot_t3": ("bot_t3", SESSIONS_TIER3),
-    # bot_t4 is DEFERRED to Phase 5
 }
 
+# Every tier this orchestrator knows how to run, for --tier's argparse choices
+# and lookup. bot_t4 lives here only, not in TIER_MAP.
+ALL_TIER_MAP = {
+    **TIER_MAP,
+    "bot_t4": ("bot_t4", SESSIONS_TIER4),
+}
 
-def _write_manifest_row(session_id: str, label: str, start_ts: float, end_ts: float, pcap_path: Path) -> None:
+# Number of sessions sharing one client_identity_id, simulating repeat visits
+# from the same claimed client (needed for the temporal-consistency check).
+CLIENT_IDENTITY_GROUP_SIZE = (3, 5)
+
+
+def _write_manifest_row(session_id: str, client_identity_id: str, label: str, start_ts: float, end_ts: float, pcap_path: Path) -> None:
     """Append a row to session_manifest.csv, creating it with headers if needed."""
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     is_new = not MANIFEST_PATH.exists()
     with open(MANIFEST_PATH, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["session_id", "label", "start_ts", "end_ts", "pcap_path"])
+        writer = csv.DictWriter(f, fieldnames=["session_id", "client_identity_id", "label", "start_ts", "end_ts", "pcap_path"])
         if is_new:
             writer.writeheader()
         writer.writerow({
-            "session_id": session_id,
-            "label":      label,
-            "start_ts":   start_ts,
-            "end_ts":     end_ts,
-            "pcap_path":  str(pcap_path),
+            "session_id":         session_id,
+            "client_identity_id": client_identity_id,
+            "label":              label,
+            "start_ts":           start_ts,
+            "end_ts":             end_ts,
+            "pcap_path":          str(pcap_path),
         })
 
 
-def _write_db_session(session_id: str, label: str, start_ts: float, end_ts: float, pcap_path: Path) -> None:
+def _write_db_session(session_id: str, client_identity_id: str, label: str, start_ts: float, end_ts: float, pcap_path: Path) -> None:
     """Insert a row into the SQLite sessions table."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute(
-            """INSERT OR IGNORE INTO sessions (session_id, label, start_ts, end_ts, pcap_path)
-               VALUES (?, ?, ?, ?, ?)""",
-            (session_id, label, start_ts, end_ts, str(pcap_path)),
+            """INSERT OR IGNORE INTO sessions (session_id, client_identity_id, label, start_ts, end_ts, pcap_path)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_id, client_identity_id, label, start_ts, end_ts, str(pcap_path)),
         )
         conn.commit()
     finally:
@@ -82,9 +99,14 @@ def _verify_pcap(pcap_path: Path) -> bool:
     return pcap_path.exists() and pcap_path.stat().st_size > 0
 
 
-async def run_session(label: str, session_id: str) -> bool:
+async def run_session(label: str, session_id: str, client_identity_id: str, degraded: bool = False) -> bool:
     """
     Run a single session for the given label tier.
+    `client_identity_id` groups this session with others claiming to be the
+    same client (repeat visits) — distinct from `session_id`, which is unique
+    per connection.
+    `degraded` only applies to bot_t4 — see bot_tier4_adaptive.py's module
+    docstring for what the "degraded" backend profile means.
     Returns True if the pcap is non-empty (success).
     """
     pcap_path = get_pcap_path(session_id, PCAP_STORE)
@@ -110,6 +132,10 @@ async def run_session(label: str, session_id: str) -> bool:
             import bot_tier3_sophisticated
             await bot_tier3_sophisticated.run_bot_t3_session(session_id)
 
+        elif label == "bot_t4":
+            import bot_tier4_adaptive
+            await bot_tier4_adaptive.run_bot_t4_session(session_id, degraded=degraded)
+
         else:
             raise ValueError(f"Unknown label: {label}")
 
@@ -123,8 +149,8 @@ async def run_session(label: str, session_id: str) -> bool:
     end_ts = time.time()
 
     # Write manifest + DB
-    _write_manifest_row(session_id, label, start_ts, end_ts, pcap_path)
-    _write_db_session(session_id, label, start_ts, end_ts, pcap_path)
+    _write_manifest_row(session_id, client_identity_id, label, start_ts, end_ts, pcap_path)
+    _write_db_session(session_id, client_identity_id, label, start_ts, end_ts, pcap_path)
 
     ok = _verify_pcap(pcap_path)
     status = "OK" if ok else "EMPTY PCAP"
@@ -133,14 +159,26 @@ async def run_session(label: str, session_id: str) -> bool:
 
 
 async def run_tier(label: str, num_sessions: int) -> tuple[int, int]:
-    """Run all sessions for one tier. Returns (success_count, total)."""
+    """
+    Run all sessions for one tier. Sessions are grouped into batches of
+    CLIENT_IDENTITY_GROUP_SIZE (3-5) sharing one client_identity_id, simulating
+    repeat visits from the same claimed client (needed for the temporal-
+    consistency check). Returns (success_count, total).
+    """
     success = 0
-    for i in range(num_sessions):
-        sid = str(uuid.uuid4())
-        print(f"\n[orchestrator] {label} session {i+1}/{num_sessions} — {sid}")
-        ok = await run_session(label, sid)
-        if ok:
-            success += 1
+    i = 0
+    while i < num_sessions:
+        client_identity_id = str(uuid.uuid4())
+        group_size = min(random.randint(*CLIENT_IDENTITY_GROUP_SIZE), num_sessions - i)
+        for _ in range(group_size):
+            sid = str(uuid.uuid4())
+            i += 1
+            degraded = label == "bot_t4" and random.random() < TIER4_DEGRADED_PROFILE_PROB
+            profile_note = f", profile={'degraded' if degraded else 'full'}" if label == "bot_t4" else ""
+            print(f"\n[orchestrator] {label} session {i}/{num_sessions} — {sid} (client_identity_id={client_identity_id[:8]}{profile_note})")
+            ok = await run_session(label, sid, client_identity_id, degraded=degraded)
+            if ok:
+                success += 1
     return success, num_sessions
 
 
@@ -151,7 +189,7 @@ async def main(args: argparse.Namespace) -> None:
     if args.mini:
         tiers = [(label, 1) for label in ["human", "bot_t1", "bot_t2", "bot_t3"]]
     elif args.tier:
-        label, default_count = TIER_MAP[args.tier]
+        label, default_count = ALL_TIER_MAP[args.tier]
         tiers = [(label, args.sessions or default_count)]
     else:
         tiers = [(label, count) for label, (_, count) in TIER_MAP.items()]
@@ -186,7 +224,7 @@ async def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="QUIC/PQ-TLS Bot Detection — Session Orchestrator")
     parser.add_argument("--mini",     action="store_true", help="Run 1 session per tier (Gate 2 smoke test)")
-    parser.add_argument("--tier",     choices=list(TIER_MAP.keys()), help="Run only this tier")
+    parser.add_argument("--tier",     choices=list(ALL_TIER_MAP.keys()), help="Run only this tier")
     parser.add_argument("--sessions", type=int, default=None, help="Override session count")
     args = parser.parse_args()
     asyncio.run(main(args))
