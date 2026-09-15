@@ -15,6 +15,12 @@ ml/model_registry/*.pkl
 mlruns/
 mlflow.db
 *.parquet
+# Exceptions: these two are small (well under 150 KB combined) and are the
+# derived feature datasets teammates need to rerun training/evasion-test
+# scripts without redoing the full raw-pcap capture + feature-extraction
+# pipeline. Everything else under *.parquet stays ignored.
+!feature-extraction/dataset.parquet
+!ml/tier4_dataset.parquet
 
 # Captures (large, regeneratable)
 capture/pcap_store/*.pcap
