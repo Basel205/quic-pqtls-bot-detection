@@ -49,15 +49,19 @@ def compute_temporal_scores(df: pd.DataFrame, manifest_path: Path = MANIFEST_PAT
     on every field. Sessions whose client_identity_id has no siblings
     (shouldn't happen given the 3-5 batch design, but handled defensively)
     score 0 — no repeat-visit evidence to call inconsistent.
-    """
-    manifest = pd.read_csv(manifest_path)[["session_id", "client_identity_id"]]
-    merged = df.merge(manifest, on="session_id", how="left").reset_index(drop=True)
 
-    # Build a map from merged-frame position back to the original df index
-    # so we can write scores back aligned to df.index (not the merged index).
-    orig_index = df.reset_index(drop=False)["index"] if "index" not in df.columns else None
-    # Simpler: track original index via a column, then map back.
-    merged["_orig_idx"] = df.index.to_numpy()
+    Safe to call on a filtered/subset dataframe (e.g. df[mask]) as well as a
+    freshly-loaded one: .merge() always returns a fresh 0..n-1 index
+    regardless of the index df came in with, so the internal computation is
+    done against a reset index and the result is relabeled back onto df's
+    original index at the end — without this, `scores.loc[idxs[i]]` silently
+    writes to the wrong rows (mostly leaving scores at the initial 0.0)
+    whenever df's index isn't already a clean 0..n-1 range.
+    """
+    original_index = df.index
+    df = df.reset_index(drop=True)
+    manifest = pd.read_csv(manifest_path)[["session_id", "client_identity_id"]]
+    merged = df.merge(manifest, on="session_id", how="left")
 
     scores = pd.Series(0.0, index=df.index)
     n_fields = len(TEMPORAL_FIELDS)
@@ -67,15 +71,16 @@ def compute_temporal_scores(df: pd.DataFrame, manifest_path: Path = MANIFEST_PAT
         if n <= 1:
             continue
         vals = group[TEMPORAL_FIELDS].to_numpy()
-        orig_idxs = group["_orig_idx"].to_numpy()
+        idxs = group.index.to_numpy()
         for i in range(n):
             mismatches = 0
             for j in range(n):
                 if i == j:
                     continue
                 mismatches += int((vals[i] != vals[j]).sum())
-            scores.loc[orig_idxs[i]] = mismatches / (n_fields * (n - 1))
+            scores.loc[idxs[i]] = mismatches / (n_fields * (n - 1))
 
+    scores.index = original_index
     return scores
 
 

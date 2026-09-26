@@ -66,6 +66,36 @@ EXPERIMENTS = {
         "features":     EXPERIMENT_FULL_CONSISTENCY_FEATURES,
         "description":  "Ablation Study: Classical + spatial + temporal-inconsistency scores (no PQ/QUIC/timing)",
     },
+
+    # ── Retrained variants (Phase 5 fix) ────────────────────────────────────
+    # Same feature sets as B_enhanced/D1_spatial/D2_spatial_temporal, but
+    # trained on dataset.parquet PLUS the Tier-4 TRAIN-split sessions (see
+    # ml/split_tier4.py). Kept as separate experiment names, not overwrites,
+    # so the original frozen results stay intact for the before/after
+    # comparison table. The "retrained" flag is what train_utils.py's
+    # load_dataset_for_experiment() checks to fold in the tier4 rows.
+    "B_enhanced_retrained": {
+        "features":     EXPERIMENT_B_FEATURES,
+        "description":  "B_enhanced retrained with Tier-4 TRAIN-split sessions folded into training",
+        "retrained":    True,
+    },
+    "D1_spatial_retrained": {
+        "features":     EXPERIMENT_D1_FEATURES,
+        "description":  "D1_spatial retrained with Tier-4 TRAIN-split sessions folded into training",
+        "retrained":    True,
+    },
+    "D2_spatial_temporal_retrained": {
+        "features":     EXPERIMENT_D2_FEATURES,
+        "description":  (
+            "D2_spatial_temporal retrained with Tier-4 TRAIN-split sessions folded into "
+            "training. This is the first time temporal_inconsistency_score is non-constant "
+            "for ANY training row — Tier 4 mixes 'full' and 'degraded' profile sessions "
+            "within the same client_identity_id group, which is what gives D2 something "
+            "real to learn from. See ml/group_level_eval.py for the evaluation that isolates "
+            "this signal from B_enhanced_retrained's per-session ceiling."
+        ),
+        "retrained":    True,
+    },
 }
 
 # ── Model hyperparameters ────────────────────────────────────────────────────

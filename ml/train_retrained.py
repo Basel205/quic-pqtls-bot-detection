@@ -1,13 +1,15 @@
 """
-Train the three retrained arms (B, D1, D2) on the combined dataset
-(Tiers 1-3 + Tier-4 training groups from ml/split_tier4.py).
+Trains B_enhanced_retrained, D1_spatial_retrained, and D2_spatial_temporal_retrained
+— the same models/features as B_enhanced/D1_spatial/D2_spatial_temporal, but with
+the Tier-4 TRAIN-split sessions (see split_tier4.py) folded into training, so the
+model actually sees a PQ-present/QUIC-absent example before the evasion test runs.
 
-Run after:
-    python ml/split_tier4.py
-    python consistency-layer/train_d1_d2.py   (recomputes scores on combined data)
-
-Then run:
-    python ml/evasion_test.py
+Run order:
+  1. python ml/evasion_test.py            (builds tier4_dataset.parquet if missing)
+  2. python ml/split_tier4.py             (writes tier4_train_ids.csv / tier4_test_ids.csv)
+  3. python ml/train_retrained.py         (this script)
+  4. python ml/evasion_test.py            (re-run — now evaluates all 9 models on the
+                                            same held-out tier4 TEST-split sessions)
 """
 import json
 import sys
@@ -25,25 +27,9 @@ RETRAINED_EXPERIMENTS = [
     "D2_spatial_temporal_retrained",
 ]
 
-
-def main() -> None:
-    print("=" * 60)
-    print("Training retrained arms on combined data (Tiers 1-3 + Tier-4 train groups)")
-    print("=" * 60)
-
-    all_results = {}
+if __name__ == "__main__":
     for exp in RETRAINED_EXPERIMENTS:
-        print(f"\n--- {exp} ---")
         result = train_and_evaluate(exp)
         summary = {k: v for k, v in result.items() if k != "features"}
-        all_results[exp] = summary
+        print(f"\n=== {exp} ===")
         print(json.dumps(summary, indent=2))
-
-    print("\n" + "=" * 60)
-    print("All retrained arms complete.")
-    print("Next step: python ml/evasion_test.py")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    main()

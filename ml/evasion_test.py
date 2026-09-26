@@ -12,9 +12,18 @@ or rebuilds the main dataset file. Reuses build_dataset.py's per-pcap
 extractor and consistency-layer's scoring functions rather than duplicating
 either.
 
-Metric: for each already-trained model (B_enhanced, D1_spatial,
-D2_spatial_temporal), the fraction of bot_t4 sessions it misclassifies as
-"human" — i.e. the evasion rate. Lower is better (more evasion-resistant).
+If ml/tier4_test_ids.csv exists (written by split_tier4.py), every model in
+this comparison — frozen originals AND the *_retrained variants — is
+evaluated on that TEST-split subset only, not the full 200 sessions. This
+keeps the before/after comparison table apples-to-apples: the *_retrained
+models were trained on the TRAIN-split sessions, so scoring everyone on the
+same held-out TEST-split sessions is the only fair way to read "did
+retraining help" off the resulting numbers. Falls back to the full 200
+sessions (with a warning) if split_tier4.py hasn't been run yet.
+
+Metric: for each already-trained model, the fraction of bot_t4 sessions it
+misclassifies as "human" — i.e. the evasion rate. Lower is better (more
+evasion-resistant).
 """
 import argparse
 import csv
@@ -49,23 +58,28 @@ from spatial_score import score_dataframe as score_spatial_dataframe
 from temporal_score import compute_temporal_scores
 
 TIER4_DATASET_PATH = Path(__file__).parent / "tier4_dataset.parquet"
+TIER4_TEST_IDS_PATH = Path(__file__).parent / "tier4_test_ids.csv"
 MODEL_REGISTRY      = Path(__file__).parent / "model_registry"
 RESULTS_DIR         = Path(__file__).parent / "results"
 
 # A_baseline included for completeness (it uses none of the novel signals so
 # an adaptive bot gains nothing from spoofing PQ/QUIC/timing against it), but
-# the real comparison this test exists for is B vs. D1/D2.
+# the real comparison this test exists for is B vs. D1/D2, frozen vs. retrained.
 EVASION_MODELS = [
     "A_baseline", "B_enhanced", "D1_spatial", "D2_spatial_temporal",
     "Ablation_spatial_only", "Ablation_full_consistency",
+    "B_enhanced_retrained", "D1_spatial_retrained", "D2_spatial_temporal_retrained",
 ]
 MODEL_FEATURES = {
-    "A_baseline":               EXPERIMENT_A_FEATURES,
-    "B_enhanced":                EXPERIMENT_B_FEATURES,
-    "D1_spatial":                EXPERIMENT_D1_FEATURES,
-    "D2_spatial_temporal":       EXPERIMENT_D2_FEATURES,
-    "Ablation_spatial_only":     EXPERIMENT_SPATIAL_ONLY_FEATURES,
-    "Ablation_full_consistency": EXPERIMENT_FULL_CONSISTENCY_FEATURES,
+    "A_baseline":                    EXPERIMENT_A_FEATURES,
+    "B_enhanced":                    EXPERIMENT_B_FEATURES,
+    "D1_spatial":                    EXPERIMENT_D1_FEATURES,
+    "D2_spatial_temporal":           EXPERIMENT_D2_FEATURES,
+    "Ablation_spatial_only":         EXPERIMENT_SPATIAL_ONLY_FEATURES,
+    "Ablation_full_consistency":     EXPERIMENT_FULL_CONSISTENCY_FEATURES,
+    "B_enhanced_retrained":          EXPERIMENT_B_FEATURES,
+    "D1_spatial_retrained":          EXPERIMENT_D1_FEATURES,
+    "D2_spatial_temporal_retrained": EXPERIMENT_D2_FEATURES,
 }
 
 
@@ -101,12 +115,36 @@ def build_tier4_dataset(rebuild: bool = False) -> pd.DataFrame:
     return df
 
 
+def _filter_to_test_split(df: pd.DataFrame) -> pd.DataFrame:
+    """Restricts df to the TEST-split session_ids written by split_tier4.py,
+    so frozen and retrained models are compared on identical held-out
+    sessions. If split_tier4.py hasn't been run, evaluates on all of df
+    instead (matches the original, pre-retrain-fix behavior)."""
+    if not TIER4_TEST_IDS_PATH.exists():
+        print(f"[evasion_test] {TIER4_TEST_IDS_PATH} not found — evaluating on "
+              f"all {len(df)} tier4 sessions. Run split_tier4.py first for a fair "
+              f"frozen-vs-retrained comparison.")
+        return df
+
+    test_ids = set(pd.read_csv(TIER4_TEST_IDS_PATH)["session_id"])
+    filtered = df[df["session_id"].isin(test_ids)]
+    n_excluded = len(df) - len(filtered)
+    print(f"[evasion_test] Filtered to held-out test sessions: {len(filtered)}/{len(df)} "
+          f"sessions ({n_excluded} training sessions excluded from evasion test).")
+    return filtered
+
+
 def add_consistency_scores(df: pd.DataFrame) -> pd.DataFrame:
     """Joins in D1's spatial score (against the human-derived expected-
     combination table) and D2's temporal score (drift within each bot_t4
-    session's own client_identity_id group — tier4 groups never share a
-    client_identity_id with any other tier, so this only ever compares a
-    bot_t4 session against its bot_t4 siblings)."""
+    session's own client_identity_id group). Scored BEFORE the train/test
+    filter is applied to the full tier4 set, so a test-split session's
+    temporal score still reflects its real siblings — some of which may be
+    on the train side, which is fine: the score is a read of what actually
+    happened on the wire, not something derived from a trained model, so
+    there's no leakage in computing it this way. What must never happen is a
+    train-split session's score being computed after the fact from
+    test-split siblings' train-time labels; that isn't done here."""
     table = build_expected_combinations()
     df = df.copy()
     df["spatial_inconsistency_score"] = score_spatial_dataframe(df, table)
@@ -117,6 +155,7 @@ def add_consistency_scores(df: pd.DataFrame) -> pd.DataFrame:
 def run_evasion_test(rebuild: bool = False) -> dict:
     df = build_tier4_dataset(rebuild=rebuild)
     df = add_consistency_scores(df)
+    df = _filter_to_test_split(df)
 
     results = {"n_bot_t4_sessions": len(df)}
     print(f"\n[evasion_test] {len(df)} bot_t4 sessions, evaluating {len(EVASION_MODELS)} trained models:\n")
@@ -142,8 +181,14 @@ def run_evasion_test(rebuild: bool = False) -> dict:
             "n_evaded_as_human":       n_evaded,
             "evasion_rate":            evasion_rate,
             "prediction_distribution": dist,
+            # per-session predictions, aligned to df's session_id column —
+            # kept in the JSON specifically so group_level_eval.py (and any
+            # manual "which sessions did D2 catch that B missed" check) can
+            # be done from the saved results without re-running inference.
+            "session_ids":             df["session_id"].tolist(),
+            "predictions":             pred_labels,
         }
-        print(f"  {exp:22s} — {n_evaded:3d}/{n} misclassified as human "
+        print(f"  {exp:30s} — {n_evaded:3d}/{n} misclassified as human "
               f"({evasion_rate:.1%} evasion rate)   predictions: {dist}")
 
     RESULTS_DIR.mkdir(exist_ok=True)

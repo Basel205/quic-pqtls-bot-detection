@@ -1,32 +1,44 @@
 """
-Group-level evasion evaluation for the Tier-4 evasion test.
+Group-level evasion evaluation — the "burn the whole identity" idea: a real
+deployment tracks a client over repeat visits, so if ANY session from a
+client_identity_id gets flagged, every session from that identity can be
+blocked, not just the one flagged session. A per-session-only evasion rate
+(what ml/evasion_test.py reports) undersells this, because it scores every
+session independently even when the model has cross-session information for
+free.
 
-Per-session evasion rate (from evasion_test.py) is the clean primary metric.
-This script adds a group-level view: for each client_identity_id group,
-is the group "caught" (at least one session flagged as bot) or "escaped"
-(all sessions misclassified as human)?
+This script reports TWO versions of that idea for D2, and prints both,
+because the naive one is not automatically a win (see CLAUDE.md's write-up of
+the first attempt — it actually did WORSE than a naive group rule for B in
+that run, precisely because per-session score noise on a small session count
+per identity (3-5) can go either way):
 
-Two modes:
-  1. Naive: group is "caught" if ANY session in the group is flagged as non-human.
-     Simple but can be gamed — a model that flags every session catches every group.
-  2. Threshold-swept: uses D2's continuous predicted probability for the bot class.
-     Group score = max bot-probability across sessions. Threshold is chosen on a
-     validation split to maximise F1, then applied to the test set once.
-     This is the methodologically cleanest number to report.
+  1. NAIVE: flag the whole group if ANY session in it was individually
+     misclassified as non-human by the trained model. Computed identically
+     for B_enhanced_retrained and D2_spatial_temporal_retrained so the
+     comparison is fair — this is what "burn the group" naively means.
 
-Usage:
-    python ml/group_level_eval.py --model D2_spatial_temporal_retrained
-    python ml/group_level_eval.py --all
+  2. THRESHOLD-SWEPT (D2 only): flag the whole group if the MAX
+     temporal_inconsistency_score across the group's sessions exceeds a
+     threshold, swept across several values. This uses the actual continuous
+     signal instead of a binary "did the classifier individually catch this"
+     proxy, and is closer to what a real deployment would tune.
+
+IMPORTANT: the threshold in (2) must be chosen on a VALIDATION split, not the
+evasion TEST split, before it's reported as a final number — sweeping it here
+and picking whichever value looks best on the test set would be quietly
+fitting the test set. This script prints the sweep so you can see the shape
+of the curve and pick a principled threshold (e.g. the one that best
+separates degraded-group scores from clean-group scores on the TRAINING
+data's tier4-train groups), not to hand-pick the best test-set number.
+
+Run after ml/split_tier4.py, ml/train_retrained.py, and ml/evasion_test.py.
 """
-import argparse
-import json
 import sys
 from pathlib import Path
 
 import joblib
-import numpy as np
 import pandas as pd
-from sklearn.metrics import f1_score, precision_score, recall_score
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
@@ -34,165 +46,91 @@ from _paths import setup_paths; setup_paths(_ROOT)
 sys.path.insert(0, str(_ROOT / "consistency-layer"))
 
 from tg_config import MANIFEST_PATH
-from feature_schema import (
-    EXPERIMENT_B_FEATURES,
-    EXPERIMENT_D1_FEATURES,
-    EXPERIMENT_D2_FEATURES,
-    LABEL_MAP_INV,
-)
+from feature_schema import EXPERIMENT_B_FEATURES, EXPERIMENT_D2_FEATURES, LABEL_MAP_INV
+from expected_combinations import build_expected_combinations
+from spatial_score import score_dataframe as score_spatial
+from temporal_score import compute_temporal_scores
 
 TIER4_DATASET_PATH = Path(__file__).parent / "tier4_dataset.parquet"
-TIER4_TEST_IDS     = Path(__file__).parent / "tier4_test_ids.csv"
-MODEL_REGISTRY     = Path(__file__).parent / "model_registry"
-RESULTS_DIR        = Path(__file__).parent / "results"
+TIER4_TEST_IDS_PATH = Path(__file__).parent / "tier4_test_ids.csv"
+MODEL_REGISTRY = Path(__file__).parent / "model_registry"
 
-MODEL_FEATURES = {
-    "B_enhanced_retrained":          EXPERIMENT_B_FEATURES,
-    "D1_spatial_retrained":          EXPERIMENT_D1_FEATURES,
-    "D2_spatial_temporal_retrained": EXPERIMENT_D2_FEATURES,
-}
+THRESHOLD_SWEEP = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
 
 
-def load_test_data() -> pd.DataFrame:
-    """Load the held-out Tier-4 test sessions with consistency scores attached."""
-    if not TIER4_DATASET_PATH.exists():
-        raise FileNotFoundError(
-            f"{TIER4_DATASET_PATH} not found — run ml/evasion_test.py first."
-        )
-    df = pd.read_parquet(TIER4_DATASET_PATH)
+def _load_test_set() -> pd.DataFrame:
+    if not TIER4_TEST_IDS_PATH.exists():
+        raise FileNotFoundError("ml/tier4_test_ids.csv not found — run ml/split_tier4.py first.")
+    # IMPORTANT: score on the full tier4 set BEFORE filtering to test_ids, not
+    # after. temporal_score.py's compute_temporal_scores() writes results back
+    # via `scores.loc[idxs[i]]` where idxs comes from a post-merge index that
+    # only lines up with df's own index when df has a clean 0..n-1 RangeIndex
+    # (true for a freshly-loaded parquet, false after boolean-mask filtering,
+    # which keeps the original non-contiguous positions). Filtering first
+    # silently produces mostly-zero scores instead of raising an error — see
+    # IMPLEMENTATION.md for the underlying fix needed in temporal_score.py
+    # itself. Scoring before filtering sidesteps it here.
+    tier4 = pd.read_parquet(TIER4_DATASET_PATH).reset_index(drop=True)
+    table = build_expected_combinations()
+    tier4["spatial_inconsistency_score"] = score_spatial(tier4, table)
+    tier4["temporal_inconsistency_score"] = compute_temporal_scores(tier4, manifest_path=MANIFEST_PATH)
 
-    if TIER4_TEST_IDS.exists():
-        test_ids = set(pd.read_csv(TIER4_TEST_IDS)["session_id"].tolist())
-        df = df[df["session_id"].isin(test_ids)].copy()
-
-    # Attach client_identity_id from manifest
+    test_ids = set(pd.read_csv(TIER4_TEST_IDS_PATH)["session_id"])
+    df = tier4[tier4["session_id"].isin(test_ids)].copy()
     manifest = pd.read_csv(MANIFEST_PATH)[["session_id", "client_identity_id"]]
     df = df.merge(manifest, on="session_id", how="left")
-
-    # Attach consistency scores from the pre-computed CSVs (generated by train_d1_d2.py).
-    # These CSVs include Tier-4 sessions because train_d1_d2._ensure_scores_current()
-    # built them on the combined 1,725-session frame.
-    consistency_layer = _ROOT / "consistency-layer"
-    spatial_csv  = consistency_layer / "d1_spatial_scores.csv"
-    temporal_csv = consistency_layer / "d2_temporal_scores.csv"
-
-    if "spatial_inconsistency_score" not in df.columns:
-        if not spatial_csv.exists():
-            raise FileNotFoundError(f"{spatial_csv} not found — run consistency-layer/train_d1_d2.py first.")
-        spatial = pd.read_csv(spatial_csv)[["session_id", "spatial_inconsistency_score"]]
-        df = df.merge(spatial, on="session_id", how="left")
-
-    if "temporal_inconsistency_score" not in df.columns:
-        if not temporal_csv.exists():
-            raise FileNotFoundError(f"{temporal_csv} not found — run consistency-layer/train_d1_d2.py first.")
-        temporal = pd.read_csv(temporal_csv)[["session_id", "temporal_inconsistency_score"]]
-        df = df.merge(temporal, on="session_id", how="left")
-
     return df
 
 
-def evaluate_model_group_level(model_name: str, df: pd.DataFrame) -> dict:
-    model_path = MODEL_REGISTRY / f"{model_name}.joblib"
-    if not model_path.exists():
-        return {"error": f"{model_path} not found — train it first."}
-
-    model = joblib.load(model_path)
-    features = MODEL_FEATURES[model_name]
-    X = df[features]
-
-    pred_labels = [LABEL_MAP_INV[p] for p in model.predict(X)]
-    proba = model.predict_proba(X)  # shape (n_sessions, n_classes)
-    # Class index for "human" in LABEL_MAP_INV is 0
-    # Bot probability = 1 - P(human)
-    human_class_idx = 0
-    bot_proba = 1.0 - proba[:, human_class_idx]
-
-    df = df.copy()
-    df["pred_label"]  = pred_labels
-    df["bot_proba"]   = bot_proba
-    df["is_flagged"]  = df["pred_label"] != "human"  # per-session flag
-
-    # ── Naive group-level ──────────────────────────────────────────────────
-    groups = df.groupby("client_identity_id")
-    group_caught_naive = groups["is_flagged"].any()
-    # A group that is fully evaded = ALL sessions predicted as human
-    n_groups = len(group_caught_naive)
-    n_caught_naive = group_caught_naive.sum()
-    naive_evasion_rate = 1.0 - (n_caught_naive / n_groups)
-
-    # ── Threshold-swept group-level ────────────────────────────────────────
-    # Group score = max bot_proba across sessions in that group
-    group_max_proba = groups["bot_proba"].max()
-
-    # 60/40 split of groups for val/test threshold tuning
-    rng = np.random.default_rng(42)
-    all_group_ids = group_max_proba.index.to_numpy()
-    rng.shuffle(all_group_ids)
-    split = int(len(all_group_ids) * 0.6)
-    val_groups  = set(all_group_ids[:split])
-    test_groups = set(all_group_ids[split:])
-
-    # All groups are bots (label=1 for "caught" = group has at least one bot session)
-    # Since all Tier-4 sessions are bots, ground truth is always "should be caught" = 1.
-    # "Escaped" (evasion) = group score below threshold → predicted 0 (human).
-    val_scores  = group_max_proba[group_max_proba.index.isin(val_groups)].values
-    test_scores = group_max_proba[group_max_proba.index.isin(test_groups)].values
-
-    # Grid search threshold on val split to maximise recall (minimise evasion)
-    best_thresh, best_recall = 0.5, 0.0
-    for t in np.linspace(0.05, 0.95, 91):
-        preds_val = (val_scores >= t).astype(int)
-        r = recall_score(np.ones(len(val_scores), dtype=int), preds_val, zero_division=0)
-        if r > best_recall:
-            best_recall, best_thresh = r, t
-
-    preds_test = (test_scores >= best_thresh).astype(int)
-    gt_test = np.ones(len(test_scores), dtype=int)
-    thresh_evasion = 1.0 - recall_score(gt_test, preds_test, zero_division=0)
-
-    return {
-        "model": model_name,
-        "n_sessions": len(df),
-        "n_groups": n_groups,
-        "naive_group_evasion_rate": round(naive_evasion_rate, 4),
-        "n_groups_evaded_naive": int(n_groups - n_caught_naive),
-        "threshold_swept": {
-            "best_threshold_on_val": round(float(best_thresh), 3),
-            "test_group_evasion_rate": round(thresh_evasion, 4),
-            "val_recall": round(float(best_recall), 4),
-            "n_val_groups": len(val_scores),
-            "n_test_groups": len(test_scores),
-        },
-    }
+def _predict(model_name: str, features: list[str], df: pd.DataFrame) -> pd.Series:
+    model = joblib.load(MODEL_REGISTRY / f"{model_name}.joblib")
+    pred = model.predict(df[features])
+    return pd.Series([LABEL_MAP_INV[p] for p in pred], index=df.index)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=list(MODEL_FEATURES), help="Single model to evaluate")
-    parser.add_argument("--all", action="store_true", help="Evaluate all retrained models")
-    args = parser.parse_args()
+def naive_group_rule(df: pd.DataFrame, pred_col: str, model_name: str) -> None:
+    df["_caught"] = df[pred_col] != "human"
+    group_flag = df.groupby("client_identity_id")["_caught"].any()
+    n_groups = len(group_flag)
+    n_groups_caught = int(group_flag.sum())
+    caught_ids = group_flag[group_flag].index
+    n_sessions_burned = int(df["client_identity_id"].isin(caught_ids).sum())
+    print(f"  {model_name:30s} groups: {n_groups_caught}/{n_groups} flagged  "
+          f"-> {n_sessions_burned}/{len(df)} sessions would be burned "
+          f"({n_sessions_burned/len(df):.1%} caught, {1-n_sessions_burned/len(df):.1%} evasion)")
 
-    if not args.model and not args.all:
-        parser.print_help()
-        sys.exit(1)
 
-    df = load_test_data()
-    print(f"Loaded {len(df)} test sessions across {df['client_identity_id'].nunique()} groups.\n")
+def threshold_swept_rule(df: pd.DataFrame) -> None:
+    group_max_score = df.groupby("client_identity_id")["temporal_inconsistency_score"].max()
+    n_groups = len(group_max_score)
+    print(f"\n  D2 temporal score, group-max, swept threshold (n={n_groups} groups, {len(df)} sessions):")
+    print(f"  {'threshold':>10s}  {'groups flagged':>15s}  {'sessions burned':>16s}  {'evasion rate':>12s}")
+    for t in THRESHOLD_SWEEP:
+        flagged = group_max_score > t
+        n_flagged_groups = int(flagged.sum())
+        caught_ids = flagged[flagged].index
+        n_burned = int(df["client_identity_id"].isin(caught_ids).sum())
+        evasion = 1 - n_burned / len(df)
+        print(f"  {t:>10.2f}  {n_flagged_groups:>15d}  {n_burned:>16d}  {evasion:>11.1%}")
 
-    models_to_run = list(MODEL_FEATURES) if args.all else [args.model]
-    all_results = {}
-    for model_name in models_to_run:
-        print(f"=== {model_name} ===")
-        result = evaluate_model_group_level(model_name, df)
-        all_results[model_name] = result
-        print(json.dumps(result, indent=2))
-        print()
 
-    out_path = RESULTS_DIR / "group_level_evasion.json"
-    RESULTS_DIR.mkdir(exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump(all_results, f, indent=2)
-    print(f"Results saved to {out_path}")
+def main():
+    df = _load_test_set()
+    df["pred_B"] = _predict("B_enhanced_retrained", EXPERIMENT_B_FEATURES, df)
+    df["pred_D2"] = _predict("D2_spatial_temporal_retrained", EXPERIMENT_D2_FEATURES, df)
+
+    print(f"[group_level_eval] {df['client_identity_id'].nunique()} identity groups, "
+          f"{len(df)} sessions in the held-out tier4 test split\n")
+
+    print("1) NAIVE any-catch group rule (fair comparison, same rule for both):")
+    naive_group_rule(df, "pred_B", "B_enhanced_retrained")
+    naive_group_rule(df, "pred_D2", "D2_spatial_temporal_retrained")
+
+    print("\n2) Threshold-swept group rule using D2's continuous temporal score directly:")
+    threshold_swept_rule(df)
+    print("\n  NOTE: pick the threshold on a validation split before reporting a final "
+          "number — this sweep is for choosing it, not for reading off whichever row "
+          "looks best on this test set.")
 
 
 if __name__ == "__main__":
