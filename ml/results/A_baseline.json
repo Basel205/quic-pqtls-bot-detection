@@ -25,6 +25,6 @@
   "n_test": 240,
   "accuracy": 0.8,
   "macro_f1": 0.775,
-  "roc_auc_ovr": 0.9248070448070448,
-  "model_path": "C:\\Users\\har20\\OneDrive\\Desktop\\project 1\\code\\quic-pqtls-bot-detection\\ml\\model_registry\\A_baseline.joblib"
+  "roc_auc_ovr": 0.925,
+  "model_path": "C:\\Users\\kbase\\Projects\\quic-pqtls-bot-detection\\ml\\model_registry\\A_baseline.joblib"
 }

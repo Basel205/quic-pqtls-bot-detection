@@ -1,0 +1,44 @@
+{
+  "B_enhanced_retrained": {
+    "model": "B_enhanced_retrained",
+    "n_sessions": 75,
+    "n_groups": 22,
+    "naive_group_evasion_rate": 0.0909,
+    "n_groups_evaded_naive": 2,
+    "threshold_swept": {
+      "best_threshold_on_val": 0.05,
+      "test_group_evasion_rate": 0.0,
+      "val_recall": 1.0,
+      "n_val_groups": 13,
+      "n_test_groups": 9
+    }
+  },
+  "D1_spatial_retrained": {
+    "model": "D1_spatial_retrained",
+    "n_sessions": 75,
+    "n_groups": 22,
+    "naive_group_evasion_rate": 0.0909,
+    "n_groups_evaded_naive": 2,
+    "threshold_swept": {
+      "best_threshold_on_val": 0.05,
+      "test_group_evasion_rate": 0.0,
+      "val_recall": 1.0,
+      "n_val_groups": 13,
+      "n_test_groups": 9
+    }
+  },
+  "D2_spatial_temporal_retrained": {
+    "model": "D2_spatial_temporal_retrained",
+    "n_sessions": 75,
+    "n_groups": 22,
+    "naive_group_evasion_rate": 0.0,
+    "n_groups_evaded_naive": 0,
+    "threshold_swept": {
+      "best_threshold_on_val": 0.05,
+      "test_group_evasion_rate": 0.0,
+      "val_recall": 1.0,
+      "n_val_groups": 13,
+      "n_test_groups": 9
+    }
+  }
+}

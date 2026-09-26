@@ -38,5 +38,5 @@
   "accuracy": 0.9958333333333333,
   "macro_f1": 0.995574894903754,
   "roc_auc_ovr": 1.0,
-  "model_path": "C:\\Users\\har20\\OneDrive\\Desktop\\project 1\\code\\quic-pqtls-bot-detection\\ml\\model_registry\\D2_spatial_temporal.joblib"
+  "model_path": "C:\\Users\\kbase\\Projects\\quic-pqtls-bot-detection\\ml\\model_registry\\D2_spatial_temporal.joblib"
 }

@@ -25,8 +25,8 @@
   "n_train": 1120,
   "n_val": 240,
   "n_test": 240,
-  "accuracy": 0.8,
-  "macro_f1": 0.7777091694967583,
-  "roc_auc_ovr": 0.9257772597772598,
-  "model_path": "C:\\Users\\har20\\OneDrive\\Desktop\\project 1\\code\\quic-pqtls-bot-detection\\ml\\model_registry\\Ablation_full_consistency.joblib"
+  "accuracy": 0.7916666666666666,
+  "macro_f1": 0.765625,
+  "roc_auc_ovr": 0.9251965811965812,
+  "model_path": "C:\\Users\\kbase\\Projects\\quic-pqtls-bot-detection\\ml\\model_registry\\Ablation_full_consistency.joblib"
 }

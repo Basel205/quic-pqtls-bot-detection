@@ -25,7 +25,7 @@
   "n_val": 240,
   "n_test": 240,
   "accuracy": 0.7916666666666666,
-  "macro_f1": 0.7684470515591232,
-  "roc_auc_ovr": 0.9239103859103859,
-  "model_path": "C:\\Users\\har20\\OneDrive\\Desktop\\project 1\\code\\quic-pqtls-bot-detection\\ml\\model_registry\\Ablation_spatial_only.joblib"
+  "macro_f1": 0.765625,
+  "roc_auc_ovr": 0.9257321937321937,
+  "model_path": "C:\\Users\\kbase\\Projects\\quic-pqtls-bot-detection\\ml\\model_registry\\Ablation_spatial_only.joblib"
 }
