@@ -1,0 +1,15 @@
+{
+  "baseline": {
+    "evasion": 0.1891891891891892,
+    "t4_recall_indist": 0.8421052631578947
+  },
+  "sample_weight": {
+    "evasion": 0.14864864864864866,
+    "t4_recall_indist": 0.8421052631578947,
+    "t4_weight_factor": 2.7396825396825397
+  },
+  "oversampling": {
+    "evasion": 0.14864864864864866,
+    "t4_recall_indist": 0.8421052631578947
+  }
+}
