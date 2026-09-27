@@ -77,6 +77,16 @@ TEMPORAL_SCORE_COL = "temporal_inconsistency_score"
 EXPERIMENT_D1_FEATURES = ALL_FEATURES + [SPATIAL_SCORE_COL]                       # B + spatial
 EXPERIMENT_D2_FEATURES = ALL_FEATURES + [SPATIAL_SCORE_COL, TEMPORAL_SCORE_COL]   # D1 + temporal
 
+# Single-signal isolation arms (original MASTER_Implementation_Plan.md ablation
+# design, never trained until now) — CLASSICAL_FEATURES plus exactly ONE of the
+# three signal groups B_enhanced combines, to see how much of B's 79%->99.6%
+# jump each one contributes on its own.
+EXPERIMENT_PQ_ONLY_FEATURES = CLASSICAL_FEATURES + ["has_pq_keyshare", "pq_keyshare_data_len"]
+EXPERIMENT_QUIC_ONLY_FEATURES = CLASSICAL_FEATURES + [
+    "used_http3", "quic_version", "quic_transport_param_count", "quic_conn_id_len",
+]
+EXPERIMENT_TIMING_ONLY_FEATURES = CLASSICAL_FEATURES + BEHAVIORAL_FEATURES
+
 # Ablation Study arms (CLAUDE.md's Ablation Study section) — Spatial-consistency-only
 # and Full-consistency-only. Deliberately CLASSICAL_FEATURES, not ALL_FEATURES: excludes
 # NEW_PROTOCOL_FEATURES (has_pq_keyshare, used_http3, quic_*) and BEHAVIORAL_FEATURES

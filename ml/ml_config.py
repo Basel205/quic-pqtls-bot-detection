@@ -16,6 +16,9 @@ from feature_schema import (
     EXPERIMENT_D2_FEATURES,
     EXPERIMENT_SPATIAL_ONLY_FEATURES,
     EXPERIMENT_FULL_CONSISTENCY_FEATURES,
+    EXPERIMENT_PQ_ONLY_FEATURES,
+    EXPERIMENT_QUIC_ONLY_FEATURES,
+    EXPERIMENT_TIMING_ONLY_FEATURES,
     LABEL_COL,
     SESSION_ID_COL,
     LABEL_MAP,
@@ -65,6 +68,18 @@ EXPERIMENTS = {
     "Ablation_full_consistency": {
         "features":     EXPERIMENT_FULL_CONSISTENCY_FEATURES,
         "description":  "Ablation Study: Classical + spatial + temporal-inconsistency scores (no PQ/QUIC/timing)",
+    },
+    "PQ_only": {
+        "features":     EXPERIMENT_PQ_ONLY_FEATURES,
+        "description":  "Signal-isolation arm: Classical + PQ key-share presence/length only",
+    },
+    "QUIC_only": {
+        "features":     EXPERIMENT_QUIC_ONLY_FEATURES,
+        "description":  "Signal-isolation arm: Classical + QUIC transport signals only",
+    },
+    "Timing_only": {
+        "features":     EXPERIMENT_TIMING_ONLY_FEATURES,
+        "description":  "Signal-isolation arm: Classical + behavioral timing signals only",
     },
 
     # ── Retrained variants (Phase 5 fix) ────────────────────────────────────
