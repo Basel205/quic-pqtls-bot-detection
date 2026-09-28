@@ -43,3 +43,17 @@ target-site/logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Scratch / staging folders (working notes, not codebase)
+claude_plan/
+claude_plan.zip
+files/
+docs_aggregate.txt
+
+# One-off debug/analysis scripts in repo root (results already committed to ml/results/)
+check_*.py
+plot_results.py
+print_results.py
+retrain_core.py
+results_core_experiments.png
+results_evasion_test.png
