@@ -1,0 +1,17 @@
+{
+  "experiment": "D2_ensemble",
+  "description": "Soft-vote XGBoost+LightGBM ensemble on D2 features tuned+weighted",
+  "n_features": 28,
+  "n_train": 1208,
+  "n_val": 259,
+  "n_test": 259,
+  "accuracy": 0.9806949806949807,
+  "macro_f1": 0.9689946390541234,
+  "roc_auc_ovr": 0.9960002423775816,
+  "tier4_evasion_rate": 0.14864864864864866,
+  "tier4_n_sessions": 74,
+  "tier4_binary_roc_auc": NaN,
+  "tier4_binary_pr_auc": 1.0,
+  "xgb_model_path": "C:\\Users\\kbase\\Projects\\quic-pqtls-bot-detection\\ml\\model_registry\\D2_ensemble_xgb.joblib",
+  "lgb_model_path": "C:\\Users\\kbase\\Projects\\quic-pqtls-bot-detection\\ml\\model_registry\\D2_ensemble_lgb.joblib"
+}
